@@ -25,16 +25,16 @@ docker compose up --build
 Open:
 
 ```text
-http://localhost:8080
+http://localhost:8090
 ```
 
-On your Ubuntu server, expose port `8080` or put the app behind a reverse proxy. The first user creates a room and gets a URL like:
+On your Ubuntu server, expose port `8090` or put the app behind a reverse proxy. The first user creates a room and gets a URL like:
 
 ```text
-http://your-server:8080/r/abc123
+http://your-server:8090/r/abc123
 ```
 
-The host URL keeps `?host=1`; the shared URL does not.
+The host URL keeps `?host={token}`; the shared URL does not.
 
 ## Tune stream quality
 
