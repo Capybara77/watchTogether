@@ -7,12 +7,12 @@ Minimal ASP.NET Core MVP for shared browsing through a server-side Chromium inst
 - Create a room from any `http` or `https` URL.
 - Share `/r/{roomId}` with a viewer.
 - The host controls one server-side Chromium page.
-- Clicks, double-clicks, wheel scroll, typing, and common keys are forwarded to Chromium.
-- Viewers receive a JPEG frame stream from the same browser page.
+- Clicks, double-clicks, wheel scroll, typing, common keys, URL navigation, and browser back are forwarded to Chromium.
+- Viewers receive an MP4 video stream with audio captured from the same browser page.
 
 ## Current MVP limitation
 
-This version streams screen frames over SignalR. It does **not** stream audio. For watching sites with sound together, the next layer should replace the frame stream with WebRTC and capture Chromium audio through PulseAudio/PipeWire plus FFmpeg/GStreamer or a WebRTC media server.
+This version captures Chromium through Xvfb, PulseAudio, and FFmpeg. It is good enough for a small MVP room, but it is not a low-latency WebRTC media server yet. Every viewer opens their own FFmpeg stream, so CPU and outbound traffic grow with viewers.
 
 DRM-protected services can still fail inside server-side Chromium.
 
@@ -40,8 +40,9 @@ The host URL keeps `?host={token}`; the shared URL does not.
 
 Edit `docker-compose.yml`:
 
-- `BrowserStream__CaptureFps`: default `8`
-- `BrowserStream__JpegQuality`: default `65`
+- `BrowserStream__CaptureFps`: default `24`
+- `BrowserStream__VideoBitrateKbps`: default `2500`
+- `BrowserStream__AudioBitrateKbps`: default `128`
 - `BrowserStream__ViewportWidth` / `BrowserStream__ViewportHeight`: default `1366x768`
 
 Higher values increase CPU and outgoing traffic.

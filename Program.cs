@@ -18,6 +18,20 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapHub<SessionHub>("/hub/session");
+app.MapGet("/stream/{sessionId}.mp4", async (
+    string sessionId,
+    BrowserSessionManager sessions,
+    HttpContext context) =>
+{
+    var session = sessions.Get(sessionId);
+    if (session is null)
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+
+    await session.StreamVideoAsync(context);
+});
 app.MapFallbackToFile("index.html");
 
 app.Run();

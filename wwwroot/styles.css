@@ -124,6 +124,10 @@ p {
   gap: 10px;
 }
 
+.nav-controls {
+  grid-template-columns: auto 1fr auto;
+}
+
 .hint {
   font-size: 14px;
 }
@@ -215,6 +219,7 @@ p {
   display: block;
   user-select: none;
   -webkit-user-drag: none;
+  pointer-events: none;
 }
 
 .empty-state {
@@ -224,6 +229,18 @@ p {
   place-items: center;
   color: #778195;
   font-weight: 700;
+  text-align: center;
+  padding: 24px;
+  pointer-events: none;
+}
+
+.play-stream {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, calc(-50% + 44px));
+  z-index: 2;
+  min-width: 220px;
 }
 
 .statusbar {

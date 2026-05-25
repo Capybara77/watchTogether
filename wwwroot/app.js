@@ -5,6 +5,7 @@ const urlInput = document.getElementById("urlInput");
 const stage = document.getElementById("stage");
 const stream = document.getElementById("stream");
 const emptyState = document.getElementById("emptyState");
+const playStreamButton = document.getElementById("playStreamButton");
 const statusText = document.getElementById("statusText");
 const roleText = document.getElementById("roleText");
 const pageMeta = document.getElementById("pageMeta");
@@ -12,6 +13,7 @@ const copyLinkButton = document.getElementById("copyLinkButton");
 const stopButton = document.getElementById("stopButton");
 const hostControls = document.getElementById("hostControls");
 const viewerNotice = document.getElementById("viewerNotice");
+const backButton = document.getElementById("backButton");
 const navigateInput = document.getElementById("navigateInput");
 const navigateButton = document.getElementById("navigateButton");
 
@@ -59,6 +61,18 @@ stopButton.addEventListener("click", async () => {
   location.href = "/";
 });
 
+backButton.addEventListener("click", async () => {
+  if (!sessionId || !isController) {
+    return;
+  }
+
+  try {
+    await connection.invoke("Back", sessionId);
+  } catch (error) {
+    setStatus(error.message || String(error));
+  }
+});
+
 navigateButton.addEventListener("click", async () => {
   if (!sessionId || !isController) {
     return;
@@ -78,7 +92,29 @@ navigateInput.addEventListener("keydown", async (event) => {
   }
 });
 
+playStreamButton.addEventListener("click", async (event) => {
+  event.stopPropagation();
+  await startStreamPlayback();
+});
+
+stream.addEventListener("playing", () => {
+  emptyState.classList.add("hidden");
+  playStreamButton.classList.add("hidden");
+});
+
+stream.addEventListener("error", () => {
+  emptyState.textContent = "Не удалось открыть видеопоток. Обновите страницу или комнату.";
+  emptyState.classList.remove("hidden");
+  playStreamButton.classList.remove("hidden");
+});
+
 stage.addEventListener("click", async (event) => {
+  if (!stream.src || event.target === playStreamButton) {
+    return;
+  }
+
+  await startStreamPlayback();
+
   if (!isController) {
     return;
   }
@@ -160,11 +196,6 @@ async function ensureConnection() {
     .withAutomaticReconnect()
     .build();
 
-  connection.on("frame", (base64) => {
-    emptyState.classList.add("hidden");
-    stream.src = `data:image/jpeg;base64,${base64}`;
-  });
-
   connection.on("status", setStatus);
 
   connection.on("sessionStopped", () => {
@@ -172,6 +203,8 @@ async function ensureConnection() {
     isController = false;
     hostControls.classList.add("hidden");
     viewerNotice.classList.remove("hidden");
+    stream.removeAttribute("src");
+    stream.load();
   });
 
   connection.on("pageInfo", (info) => {
@@ -185,6 +218,14 @@ async function ensureConnection() {
     navigateInput.value = state.url || "";
     hostControls.classList.toggle("hidden", !isController);
     viewerNotice.classList.toggle("hidden", isController);
+
+    if (state.viewport) {
+      stage.style.aspectRatio = `${state.viewport.width} / ${state.viewport.height}`;
+    }
+
+    if (state.streamUrl) {
+      setStreamUrl(state.streamUrl);
+    }
   });
 
   connection.onreconnecting(() => setStatus("Переподключение..."));
@@ -215,6 +256,34 @@ async function joinRoom() {
     setStatus("Подключено");
   } catch (error) {
     setStatus(error.message || String(error));
+  }
+}
+
+function setStreamUrl(url) {
+  const absoluteUrl = new URL(url, location.origin).toString();
+  if (stream.dataset.streamUrl === absoluteUrl) {
+    return;
+  }
+
+  stream.dataset.streamUrl = absoluteUrl;
+  stream.src = absoluteUrl;
+  stream.load();
+  emptyState.textContent = "Подключаем видеопоток...";
+  emptyState.classList.remove("hidden");
+  playStreamButton.classList.add("hidden");
+  startStreamPlayback();
+}
+
+async function startStreamPlayback() {
+  try {
+    stream.muted = false;
+    await stream.play();
+    emptyState.classList.add("hidden");
+    playStreamButton.classList.add("hidden");
+  } catch {
+    emptyState.textContent = "Нажмите, чтобы включить видео и звук";
+    emptyState.classList.remove("hidden");
+    playStreamButton.classList.remove("hidden");
   }
 }
 

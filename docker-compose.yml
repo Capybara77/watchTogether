@@ -10,8 +10,9 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       BrowserStream__ViewportWidth: 1366
       BrowserStream__ViewportHeight: 768
-      BrowserStream__CaptureFps: 8
-      BrowserStream__JpegQuality: 65
+      BrowserStream__CaptureFps: 24
+      BrowserStream__VideoBitrateKbps: 2500
+      BrowserStream__AudioBitrateKbps: 128
       BrowserStream__NavigationTimeoutMs: 30000
     shm_size: "1gb"
     restart: unless-stopped

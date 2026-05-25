@@ -49,6 +49,19 @@ public sealed class SessionHub(BrowserSessionManager sessions) : Hub
         await session.NavigateAsync(url);
     }
 
+    public async Task Back(string sessionId)
+    {
+        var session = sessions.Get(sessionId)
+            ?? throw new HubException("Session not found.");
+
+        if (!session.CanControl(Context.ConnectionId))
+        {
+            throw new HubException("This connection is not allowed to navigate.");
+        }
+
+        await session.BackAsync();
+    }
+
     public async Task StopSession(string sessionId)
     {
         var session = sessions.Get(sessionId);

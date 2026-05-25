@@ -13,7 +13,7 @@
         <div class="mark">WT</div>
         <div>
           <h1>WatchTogether</h1>
-          <p>Одна серверная вкладка Chromium, общий просмотр и управление по ссылке.</p>
+          <p>Одна серверная вкладка Chromium, общий просмотр, звук и управление по ссылке.</p>
         </div>
       </div>
 
@@ -23,7 +23,7 @@
           <input id="urlInput" type="url" placeholder="https://example.com" value="https://example.com" required>
           <button type="submit">Создать комнату</button>
         </div>
-        <p class="hint">MVP передает картинку кадрами и события ввода. Звук в этот транспорт не входит.</p>
+        <p class="hint">Видео и звук идут единым потоком с серверного браузера. Управляет только ведущий.</p>
       </form>
     </section>
 
@@ -40,6 +40,7 @@
       </header>
 
       <div id="hostControls" class="nav-controls hidden">
+        <button id="backButton" type="button" title="Назад">Назад</button>
         <input id="navigateInput" type="url" placeholder="https://example.com">
         <button id="navigateButton" type="button">Перейти</button>
       </div>
@@ -50,8 +51,9 @@
 
       <div class="stage-wrap">
         <div id="stage" class="stage" tabindex="0" aria-label="Область удаленного браузера">
-          <img id="stream" alt="Поток удаленного браузера">
-          <div id="emptyState" class="empty-state">Ждем первый кадр...</div>
+          <video id="stream" autoplay playsinline preload="none"></video>
+          <div id="emptyState" class="empty-state">Ждем видеопоток...</div>
+          <button id="playStreamButton" type="button" class="play-stream hidden">Включить видео и звук</button>
         </div>
       </div>
 

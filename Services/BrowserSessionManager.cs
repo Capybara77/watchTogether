@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 using Microsoft.Playwright;
@@ -13,6 +14,7 @@ public sealed class BrowserSessionManager(
 {
     private readonly ConcurrentDictionary<string, BrowserSession> _sessions = new();
     private readonly Lazy<Task<IPlaywright>> _playwright = new(() => Playwright.CreateAsync());
+    private int _nextDisplay = 90;
 
     public BrowserSession? Get(string sessionId)
         => _sessions.TryGetValue(sessionId, out var session) ? session : null;
@@ -24,6 +26,7 @@ public sealed class BrowserSessionManager(
         var session = new BrowserSession(
             id,
             normalizedUrl,
+            Interlocked.Increment(ref _nextDisplay),
             await _playwright.Value,
             hub,
             options.Value,
@@ -97,9 +100,6 @@ public sealed class BrowserSessionManager(
 
     private static string GenerateId()
         => Convert.ToHexString(Guid.NewGuid().ToByteArray()).ToLowerInvariant()[..10];
-
-    private static string GenerateToken()
-        => Convert.ToHexString(Guid.NewGuid().ToByteArray()).ToLowerInvariant();
 }
 
 public sealed class BrowserSession : IAsyncDisposable
@@ -112,14 +112,19 @@ public sealed class BrowserSession : IAsyncDisposable
     private readonly SemaphoreSlim _inputLock = new(1, 1);
     private readonly HashSet<string> _controllers = [];
     private readonly string _hostToken = Convert.ToHexString(Guid.NewGuid().ToByteArray()).ToLowerInvariant();
+    private readonly string _displayName;
+    private readonly string _runtimeDir;
+    private readonly string _pulseSocket;
     private IBrowser? _browser;
     private IBrowserContext? _context;
     private IPage? _page;
-    private Task? _captureLoop;
+    private Process? _xvfb;
+    private Process? _pulse;
 
     public BrowserSession(
         string id,
         string startUrl,
+        int displayNumber,
         IPlaywright playwright,
         IHubContext<SessionHub> hub,
         BrowserStreamOptions options,
@@ -127,6 +132,9 @@ public sealed class BrowserSession : IAsyncDisposable
     {
         Id = id;
         StartUrl = startUrl;
+        _displayName = $":{displayNumber}";
+        _runtimeDir = Path.Combine(Path.GetTempPath(), "watchtogether", id);
+        _pulseSocket = Path.Combine(_runtimeDir, "pulse", "native");
         _playwright = playwright;
         _hub = hub;
         _options = options;
@@ -143,15 +151,67 @@ public sealed class BrowserSession : IAsyncDisposable
 
     public async Task StartAsync()
     {
+        Directory.CreateDirectory(_runtimeDir);
+        MakeDirectoryWorldWritable(_runtimeDir);
+
+        var pulseDir = Path.GetDirectoryName(_pulseSocket)!;
+        Directory.CreateDirectory(pulseDir);
+        MakeDirectoryWorldWritable(pulseDir);
+
+        _xvfb = StartProcess(
+            _options.XvfbPath,
+            [
+                _displayName,
+                "-screen",
+                "0",
+                $"{_options.ViewportWidth}x{_options.ViewportHeight}x24",
+                "-ac",
+                "-nolisten",
+                "tcp"
+            ],
+            "xvfb");
+
+        _pulse = StartProcess(
+            _options.PulseAudioPath,
+            [
+                "--daemonize=no",
+                "--system",
+                "--disallow-exit",
+                "--exit-idle-time=-1",
+                "--disable-shm=true",
+                "-L",
+                $"module-native-protocol-unix auth-anonymous=1 socket={_pulseSocket}",
+                "-L",
+                "module-null-sink sink_name=watch sink_properties=device.description=WatchTogether",
+                "-L",
+                "module-always-sink"
+            ],
+            "pulseaudio",
+            RuntimeEnvironment());
+
+        await Task.Delay(700, _stop.Token);
+        EnsureProcessAlive(_xvfb, "Xvfb");
+        EnsureProcessAlive(_pulse, "PulseAudio");
+
+        var browserEnv = RuntimeEnvironment();
+        browserEnv["DISPLAY"] = _displayName;
+        browserEnv["PULSE_SERVER"] = "unix:" + _pulseSocket;
+        browserEnv["PULSE_SINK"] = "watch";
+
         _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
         {
-            Headless = true,
+            Headless = false,
+            Env = browserEnv,
             Args =
             [
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
                 "--autoplay-policy=no-user-gesture-required",
-                "--disable-features=Translate,AutomationControlled"
+                "--disable-features=Translate,AutomationControlled",
+                "--disable-gpu",
+                "--use-gl=swiftshader",
+                "--window-position=0,0",
+                $"--window-size={_options.ViewportWidth},{_options.ViewportHeight}"
             ]
         });
 
@@ -169,7 +229,6 @@ public sealed class BrowserSession : IAsyncDisposable
         _page = await _context.NewPageAsync();
         _page.SetDefaultNavigationTimeout(_options.NavigationTimeoutMs);
         await NavigateAsync(StartUrl);
-        _captureLoop = CaptureLoopAsync(_stop.Token);
     }
 
     public bool AttachConnection(string connectionId, string? hostToken)
@@ -207,6 +266,7 @@ public sealed class BrowserSession : IAsyncDisposable
         {
             id = Id,
             url = StartUrl,
+            streamUrl = $"/stream/{Id}.mp4",
             controller,
             viewport = new
             {
@@ -240,6 +300,117 @@ public sealed class BrowserSession : IAsyncDisposable
         }
 
         await SendPageInfoAsync();
+    }
+
+    public async Task BackAsync()
+    {
+        if (_page is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _page.GoBackAsync(new PageGoBackOptions
+            {
+                WaitUntil = WaitUntilState.DOMContentLoaded,
+                Timeout = _options.NavigationTimeoutMs
+            });
+            StartUrl = _page.Url;
+            await SendPageInfoAsync();
+        }
+        catch (PlaywrightException ex)
+        {
+            await SendStatusAsync("Back failed: " + ex.Message);
+        }
+    }
+
+    public async Task StreamVideoAsync(HttpContext context)
+    {
+        EnsureProcessAlive(_xvfb, "Xvfb");
+        EnsureProcessAlive(_pulse, "PulseAudio");
+
+        context.Response.ContentType = "video/mp4";
+        context.Response.Headers.CacheControl = "no-store, no-cache";
+        context.Response.Headers.Pragma = "no-cache";
+        context.Response.Headers["X-Accel-Buffering"] = "no";
+
+        using var ffmpeg = StartProcess(
+            _options.FfmpegPath,
+            [
+                "-hide_banner",
+                "-loglevel",
+                "warning",
+                "-thread_queue_size",
+                "512",
+                "-f",
+                "x11grab",
+                "-draw_mouse",
+                "0",
+                "-video_size",
+                $"{_options.ViewportWidth}x{_options.ViewportHeight}",
+                "-framerate",
+                Math.Clamp(_options.CaptureFps, 1, 60).ToString(),
+                "-i",
+                $"{_displayName}.0",
+                "-thread_queue_size",
+                "512",
+                "-f",
+                "pulse",
+                "-i",
+                "watch.monitor",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-tune",
+                "zerolatency",
+                "-pix_fmt",
+                "yuv420p",
+                "-profile:v",
+                "baseline",
+                "-b:v",
+                $"{Math.Max(300, _options.VideoBitrateKbps)}k",
+                "-maxrate",
+                $"{Math.Max(300, _options.VideoBitrateKbps)}k",
+                "-bufsize",
+                $"{Math.Max(600, _options.VideoBitrateKbps * 2)}k",
+                "-g",
+                Math.Clamp(_options.CaptureFps * 2, 2, 120).ToString(),
+                "-keyint_min",
+                Math.Clamp(_options.CaptureFps * 2, 2, 120).ToString(),
+                "-sc_threshold",
+                "0",
+                "-c:a",
+                "aac",
+                "-b:a",
+                $"{Math.Max(32, _options.AudioBitrateKbps)}k",
+                "-ar",
+                "48000",
+                "-ac",
+                "2",
+                "-movflags",
+                "frag_keyframe+empty_moov+default_base_moof",
+                "-f",
+                "mp4",
+                "pipe:1"
+            ],
+            "ffmpeg",
+            StreamEnvironment(),
+            redirectStandardOutput: true);
+
+        try
+        {
+            await ffmpeg.StandardOutput.BaseStream.CopyToAsync(context.Response.Body, context.RequestAborted);
+        }
+        catch (OperationCanceledException)
+        {
+            // The viewer disconnected.
+        }
+        finally
+        {
+            KillProcess(ffmpeg, "ffmpeg");
+        }
     }
 
     public async Task ApplyInputAsync(BrowserInput input)
@@ -298,17 +469,6 @@ public sealed class BrowserSession : IAsyncDisposable
             await _stop.CancelAsync();
         }
 
-        if (_captureLoop is not null)
-        {
-            try
-            {
-                await _captureLoop;
-            }
-            catch (OperationCanceledException)
-            {
-            }
-        }
-
         if (_context is not null)
         {
             await _context.DisposeAsync();
@@ -319,45 +479,22 @@ public sealed class BrowserSession : IAsyncDisposable
             await _browser.DisposeAsync();
         }
 
+        KillProcess(_pulse, "pulseaudio");
+        KillProcess(_xvfb, "xvfb");
+
         _inputLock.Dispose();
         _stop.Dispose();
-    }
 
-    private async Task CaptureLoopAsync(CancellationToken cancellationToken)
-    {
-        var delay = TimeSpan.FromMilliseconds(1000.0 / Math.Clamp(_options.CaptureFps, 1, 30));
-
-        while (!cancellationToken.IsCancellationRequested)
+        try
         {
-            try
+            if (Directory.Exists(_runtimeDir))
             {
-                if (_page is not null)
-                {
-                    var bytes = await _page.ScreenshotAsync(new PageScreenshotOptions
-                    {
-                        Type = ScreenshotType.Jpeg,
-                        Quality = Math.Clamp(_options.JpegQuality, 35, 90),
-                        FullPage = false
-                    });
-
-                    await _hub.Clients.Group(GroupName).SendAsync(
-                        "frame",
-                        Convert.ToBase64String(bytes),
-                        cancellationToken);
-                }
-
-                await Task.Delay(delay, cancellationToken);
+                Directory.Delete(_runtimeDir, true);
             }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Capture failed for session {SessionId}", Id);
-                await SendStatusAsync("Capture error: " + ex.Message);
-                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
-            }
+        }
+        catch (IOException ex)
+        {
+            _logger.LogDebug(ex, "Could not delete runtime directory for session {SessionId}", Id);
         }
     }
 
@@ -387,6 +524,114 @@ public sealed class BrowserSession : IAsyncDisposable
 
     private Task SendStatusAsync(string message)
         => _hub.Clients.Group(GroupName).SendAsync("status", message);
+
+    private Dictionary<string, string> RuntimeEnvironment()
+        => new(StringComparer.Ordinal)
+        {
+            ["XDG_RUNTIME_DIR"] = _runtimeDir,
+            ["PULSE_RUNTIME_PATH"] = Path.Combine(_runtimeDir, "pulse")
+        };
+
+    private Dictionary<string, string> StreamEnvironment()
+    {
+        var env = RuntimeEnvironment();
+        env["DISPLAY"] = _displayName;
+        env["PULSE_SERVER"] = "unix:" + _pulseSocket;
+        return env;
+    }
+
+    private Process StartProcess(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        string name,
+        IReadOnlyDictionary<string, string>? environment = null,
+        bool redirectStandardOutput = false)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = fileName,
+            UseShellExecute = false,
+            RedirectStandardError = true,
+            RedirectStandardOutput = redirectStandardOutput
+        };
+
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        if (environment is not null)
+        {
+            foreach (var (key, value) in environment)
+            {
+                startInfo.Environment[key] = value;
+            }
+        }
+
+        var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException($"Could not start {name}.");
+
+        _ = Task.Run(async () =>
+        {
+            while (!process.HasExited)
+            {
+                var line = await process.StandardError.ReadLineAsync();
+                if (line is null)
+                {
+                    break;
+                }
+
+                _logger.LogDebug("{ProcessName} [{SessionId}]: {Line}", name, Id, line);
+            }
+        });
+
+        return process;
+    }
+
+    private static void EnsureProcessAlive(Process? process, string name)
+    {
+        if (process is null)
+        {
+            throw new InvalidOperationException($"{name} is not running.");
+        }
+
+        if (process.HasExited)
+        {
+            throw new InvalidOperationException($"{name} exited with code {process.ExitCode}.");
+        }
+    }
+
+    private void KillProcess(Process? process, string name)
+    {
+        if (process is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit(3000);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not stop {ProcessName} for session {SessionId}", name, Id);
+        }
+    }
+
+    private void MakeDirectoryWorldWritable(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var chmod = StartProcess("chmod", ["777", path], "chmod");
+        chmod.WaitForExit(3000);
+    }
 
     private static string NormalizeUrl(string rawUrl)
     {
