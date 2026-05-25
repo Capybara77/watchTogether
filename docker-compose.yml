@@ -1,0 +1,17 @@
+services:
+  watchtogether:
+    build:
+      context: .
+      args:
+        PLAYWRIGHT_VERSION: 1.52.0
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      BrowserStream__ViewportWidth: 1366
+      BrowserStream__ViewportHeight: 768
+      BrowserStream__CaptureFps: 8
+      BrowserStream__JpegQuality: 65
+      BrowserStream__NavigationTimeoutMs: 30000
+    shm_size: "1gb"
+    restart: unless-stopped

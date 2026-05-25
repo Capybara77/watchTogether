@@ -1,0 +1,265 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #101114;
+  color: #f3f4f6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(48, 103, 255, 0.22), transparent 34rem),
+    linear-gradient(135deg, #111318, #181b23 44%, #101114);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 8px;
+  background: #e8f0ff;
+  color: #101114;
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0 18px;
+  min-height: 44px;
+}
+
+button:hover {
+  background: #ffffff;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+button.danger {
+  background: #2b1f23;
+  color: #ffb3bf;
+  border: 1px solid #5f303c;
+}
+
+input {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 8px;
+  border: 1px solid #343946;
+  background: #151820;
+  color: #f7f8fb;
+  outline: none;
+  padding: 0 14px;
+}
+
+input:focus {
+  border-color: #8ab4ff;
+  box-shadow: 0 0 0 3px rgba(87, 143, 255, 0.22);
+}
+
+.app {
+  min-height: 100vh;
+}
+
+.start-screen {
+  width: min(760px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 18vh 0 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 36px;
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  background: #e8f0ff;
+  color: #101114;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: clamp(40px, 7vw, 76px);
+  line-height: 0.94;
+  letter-spacing: 0;
+}
+
+p {
+  margin: 0;
+  color: #aeb6c7;
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.start-form {
+  display: grid;
+  gap: 12px;
+}
+
+.start-form label {
+  color: #d7dce8;
+  font-weight: 700;
+}
+
+.url-row,
+.nav-controls {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+
+.hint {
+  font-size: 14px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.room-screen {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+}
+
+.topbar,
+.statusbar,
+.nav-controls,
+.viewer-notice {
+  width: min(1500px, calc(100vw - 28px));
+  margin: 0 auto;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 0 12px;
+}
+
+.room-title {
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.page-meta {
+  max-width: min(780px, calc(100vw - 360px));
+  color: #aeb6c7;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.nav-controls {
+  padding-bottom: 12px;
+}
+
+.viewer-notice {
+  color: #d6e2ff;
+  background: rgba(88, 133, 255, 0.14);
+  border: 1px solid rgba(130, 166, 255, 0.28);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.stage-wrap {
+  width: min(1500px, calc(100vw - 28px));
+  margin: 0 auto;
+  min-height: 0;
+}
+
+.stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: calc(100vh - 176px);
+  overflow: hidden;
+  border: 1px solid #303642;
+  border-radius: 8px;
+  background: #050609;
+  outline: none;
+}
+
+.stage:focus {
+  box-shadow: 0 0 0 3px rgba(87, 143, 255, 0.22);
+}
+
+#stream {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.empty-state {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #778195;
+  font-weight: 700;
+}
+
+.statusbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  color: #aeb6c7;
+  font-size: 13px;
+  padding: 12px 0 16px;
+}
+
+@media (max-width: 760px) {
+  .start-screen {
+    padding-top: 12vh;
+  }
+
+  .brand,
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .url-row,
+  .nav-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .page-meta {
+    max-width: calc(100vw - 28px);
+  }
+
+  .top-actions {
+    width: 100%;
+  }
+
+  .top-actions button {
+    flex: 1;
+  }
+}

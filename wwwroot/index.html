@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WatchTogether</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="app">
+    <section id="startScreen" class="start-screen">
+      <div class="brand">
+        <div class="mark">WT</div>
+        <div>
+          <h1>WatchTogether</h1>
+          <p>Одна серверная вкладка Chromium, общий просмотр и управление по ссылке.</p>
+        </div>
+      </div>
+
+      <form id="startForm" class="start-form">
+        <label for="urlInput">Сайт для запуска</label>
+        <div class="url-row">
+          <input id="urlInput" type="url" placeholder="https://example.com" value="https://example.com" required>
+          <button type="submit">Создать комнату</button>
+        </div>
+        <p class="hint">MVP передает картинку кадрами и события ввода. Звук в этот транспорт не входит.</p>
+      </form>
+    </section>
+
+    <section id="roomScreen" class="room-screen hidden">
+      <header class="topbar">
+        <div>
+          <div class="room-title">WatchTogether</div>
+          <div id="pageMeta" class="page-meta">Подключение...</div>
+        </div>
+        <div class="top-actions">
+          <button id="copyLinkButton" type="button">Ссылка другу</button>
+          <button id="stopButton" type="button" class="danger">Закрыть</button>
+        </div>
+      </header>
+
+      <div id="hostControls" class="nav-controls hidden">
+        <input id="navigateInput" type="url" placeholder="https://example.com">
+        <button id="navigateButton" type="button">Перейти</button>
+      </div>
+
+      <div id="viewerNotice" class="viewer-notice hidden">
+        Вы подключены как зритель. Управление доступно только ведущему.
+      </div>
+
+      <div class="stage-wrap">
+        <div id="stage" class="stage" tabindex="0" aria-label="Область удаленного браузера">
+          <img id="stream" alt="Поток удаленного браузера">
+          <div id="emptyState" class="empty-state">Ждем первый кадр...</div>
+        </div>
+      </div>
+
+      <footer class="statusbar">
+        <span id="statusText">Готовим комнату</span>
+        <span id="roleText"></span>
+      </footer>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
