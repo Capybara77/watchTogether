@@ -111,6 +111,7 @@ public sealed class BrowserSession : IAsyncDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly SemaphoreSlim _inputLock = new(1, 1);
     private readonly HashSet<string> _controllers = [];
+    private readonly ConcurrentDictionary<int, ConcurrentQueue<string>> _processErrors = new();
     private readonly string _hostToken = Convert.ToHexString(Guid.NewGuid().ToByteArray()).ToLowerInvariant();
     private readonly string _displayName;
     private readonly string _runtimeDir;
@@ -152,11 +153,8 @@ public sealed class BrowserSession : IAsyncDisposable
     public async Task StartAsync()
     {
         Directory.CreateDirectory(_runtimeDir);
-        MakeDirectoryWorldWritable(_runtimeDir);
-
         var pulseDir = Path.GetDirectoryName(_pulseSocket)!;
         Directory.CreateDirectory(pulseDir);
-        MakeDirectoryWorldWritable(pulseDir);
 
         _xvfb = StartProcess(
             _options.XvfbPath,
@@ -175,10 +173,9 @@ public sealed class BrowserSession : IAsyncDisposable
             _options.PulseAudioPath,
             [
                 "--daemonize=no",
-                "--system",
-                "--disallow-exit",
                 "--exit-idle-time=-1",
                 "--disable-shm=true",
+                "--log-target=stderr",
                 "-L",
                 $"module-native-protocol-unix auth-anonymous=1 socket={_pulseSocket}",
                 "-L",
@@ -570,6 +567,8 @@ public sealed class BrowserSession : IAsyncDisposable
 
         var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException($"Could not start {name}.");
+        var stderrLines = new ConcurrentQueue<string>();
+        _processErrors[process.Id] = stderrLines;
 
         _ = Task.Run(async () =>
         {
@@ -582,13 +581,18 @@ public sealed class BrowserSession : IAsyncDisposable
                 }
 
                 _logger.LogDebug("{ProcessName} [{SessionId}]: {Line}", name, Id, line);
+                stderrLines.Enqueue(line);
+                while (stderrLines.Count > 20)
+                {
+                    stderrLines.TryDequeue(out _);
+                }
             }
         });
 
         return process;
     }
 
-    private static void EnsureProcessAlive(Process? process, string name)
+    private void EnsureProcessAlive(Process? process, string name)
     {
         if (process is null)
         {
@@ -597,7 +601,16 @@ public sealed class BrowserSession : IAsyncDisposable
 
         if (process.HasExited)
         {
-            throw new InvalidOperationException($"{name} exited with code {process.ExitCode}.");
+            var details = "";
+            if (_processErrors.TryGetValue(process.Id, out var lines))
+            {
+                details = string.Join(" | ", lines);
+            }
+
+            throw new InvalidOperationException(
+                string.IsNullOrWhiteSpace(details)
+                    ? $"{name} exited with code {process.ExitCode}."
+                    : $"{name} exited with code {process.ExitCode}: {details}");
         }
     }
 
@@ -620,17 +633,10 @@ public sealed class BrowserSession : IAsyncDisposable
         {
             _logger.LogDebug(ex, "Could not stop {ProcessName} for session {SessionId}", name, Id);
         }
-    }
-
-    private void MakeDirectoryWorldWritable(string path)
-    {
-        if (OperatingSystem.IsWindows())
+        finally
         {
-            return;
+            _processErrors.TryRemove(process.Id, out _);
         }
-
-        using var chmod = StartProcess("chmod", ["777", path], "chmod");
-        chmod.WaitForExit(3000);
     }
 
     private static string NormalizeUrl(string rawUrl)

@@ -19,8 +19,10 @@ RUN apt-get update \
 
 ENV ASPNETCORE_URLS=http://+:8080
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV HOME=/home/pwuser
 
 COPY --from=build /app/publish .
+USER pwuser
 
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "WatchTogether.dll"]
